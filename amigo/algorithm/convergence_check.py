@@ -2,6 +2,8 @@
 
 import numpy as np
 
+from .default_options import log_print
+
 # Return codes for convergence check
 CONTINUE = 0
 CONVERGED = 1
@@ -99,7 +101,7 @@ class ConvergenceCheck:
         # A non-finite iterate cannot recover, every test is False on NaN
         if not np.isfinite(overall_error):
             if state.comm_rank == 0:
-                print("  Non-finite KKT error: terminating (restoration needed)")
+                log_print(self.options, "  Non-finite KKT error: terminating (restoration needed)")
             return RESTORATION_NEEDED
 
         # Primary convergence: ALL 4 conditions must hold
@@ -114,7 +116,7 @@ class ConvergenceCheck:
         x_max = self.problem.maxabs(state.current.get_solution())
         if x_max > diverging_iterates_tol:
             if state.comm_rank == 0:
-                print(f"  Diverging iterates: max |x| = {x_max:.2e}")
+                log_print(self.options, f"  Diverging iterates: max |x| = {x_max:.2e}")
             return DIVERGED
 
         # Persistently large Newton steps indicate an unreliable factorization
@@ -124,9 +126,10 @@ class ConvergenceCheck:
             self.diverging_step_count += 1
             if self.diverging_step_count >= self.options["diverging_step_iters"]:
                 if state.comm_rank == 0:
-                    print(
+                    log_print(
+                        self.options,
                         f"  Diverging step: ||d|| = {step_norm:.2e} for "
-                        f"{self.diverging_step_count} iterations"
+                        f"{self.diverging_step_count} iterations",
                     )
                 return DIVERGED
         else:
@@ -159,18 +162,20 @@ class ConvergenceCheck:
             self.precision_floor_count = 0
         if self.precision_floor_count >= 3 and is_acceptable:
             if state.comm_rank == 0:
-                print(
+                log_print(
+                    self.options,
                     f"  Precision floor: residual unchanged "
-                    f"for {self.precision_floor_count} iterations"
+                    f"for {self.precision_floor_count} iterations",
                 )
             return PRECISION_FLOOR
 
         # A stall at a non-acceptable point requires restoration
         if self.precision_floor_count >= 6:
             if state.comm_rank == 0:
-                print(
+                log_print(
+                    self.options,
                     f"  Stalled at non-acceptable point for "
-                    f"{self.precision_floor_count} iterations (restoration needed)"
+                    f"{self.precision_floor_count} iterations (restoration needed)",
                 )
             return RESTORATION_NEEDED
 

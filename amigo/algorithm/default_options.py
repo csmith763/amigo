@@ -6,6 +6,25 @@ order a solve runs through them.
 
 import copy
 
+
+def log_print(options, *args, **kwargs):
+    """``print`` replacement that targets ``options['log_file']`` if set, else stdout.
+
+    The target stream lives on the per-solve ``options`` dict, so each Optimizer
+    instance -- and therefore each concurrent solve -- routes its output to its OWN
+    stream with no shared global state (parallel-safe). ``None`` (default) prints to
+    stdout, preserving original behavior. Defined here (a dependency-free module) so
+    every solve-path module can import it without creating an import cycle with
+    ``iteration_logger``. A ``file=`` kwarg is ignored so callers cannot bypass the
+    routing.
+    """
+    stream = options.get("log_file") if options else None
+    kwargs.pop("file", None)
+    if stream is None:
+        print(*args, **kwargs)
+    else:
+        print(*args, file=stream, **kwargs)
+
 # Iteration limit, convergence tolerances, and the divergence watchdogs
 CONVERGENCE = {
     "max_iterations": 100,
@@ -182,6 +201,15 @@ LEGACY = {
     "use_armijo_line_search": True,
 }
 
+# Output / logging. ``log_file`` is an optional writable, file-like stream that the
+# solver's progress output is routed to (via ``iteration_logger.log_print``) instead
+# of stdout. It is held on the per-solve ``options`` dict, so each Optimizer instance
+# -- and therefore each concurrent solve -- can target its OWN stream with no shared
+# global state (parallel-safe). ``None`` (the default) preserves stdout behavior.
+OUTPUT = {
+    "log_file": None,
+}
+
 GROUPS = (
     CONVERGENCE,
     STARTING_POINT,
@@ -190,6 +218,7 @@ GROUPS = (
     LINE_SEARCH,
     RESTORATION,
     LEGACY,
+    OUTPUT,
 )
 
 

@@ -2,6 +2,16 @@
 
 Builds the per-iteration record (objective, NLP error, step sizes,
 step norm, filter size, etc.) and prints the IPM progress table.
+
+Output routing (parallel-safe)
+------------------------------
+All solver progress output is emitted through ``log_print`` (NOT the builtin
+``print``), which targets the stream in ``options["log_file"]`` when one is set, and
+falls back to stdout otherwise. The stream lives on the per-solve ``options`` dict, so
+each ``Optimizer`` instance -- hence each concurrent solve on its own thread -- routes
+output to its OWN file with no shared global state. This is what makes per-route log
+capture work under Flume's ThreadPoolExecutor without the solves clobbering one
+another (unlike process-global stdout / file-descriptor redirection).
 """
 
 import sys
@@ -14,6 +24,7 @@ from .convergence_check import (
     PRECISION_FLOOR,
     DIVERGED,
 )
+from .default_options import log_print
 
 
 class OptimizationLogger:
@@ -99,12 +110,13 @@ class OptimizationLogger:
         """Print the IPM iteration table row for this iteration."""
         iteration = iter_data["iteration"]
         if iteration % 20 == 0:
-            print(
+            log_print(
+                self.options,
                 f"{'iter':>4s}  {'nlp_error':>9s}  {'objective':>12s}  "
                 f"{'inf_pr':>9s}  {'inf_du':>9s}  {'compl':>9s}  "
                 f"{'mu':>9s}  {'||d||':>9s}  {'delta_w':>8s}  {'ic':>2s}  "
                 f"{'alpha_x':>8s}  {'alpha_z':>8s}  "
-                f"{'ls':>2s}  {'filt':>4s}  {'rej':>4s}  {'frej':>4s}  {'dv':>3s}"
+                f"{'ls':>2s}  {'filt':>4s}  {'rej':>4s}  {'frej':>4s}  {'dv':>3s}",
             )
 
         mu = iter_data.get("barrier_param", 1.0)
@@ -127,12 +139,13 @@ class OptimizationLogger:
         dw_str = f"{delta_w:8.1e}" if delta_w > 0 else f"{'---':>8s}"
 
         dv = iter_data.get("dual_viol_total", 0)
-        print(
+        log_print(
+            self.options,
             f"{iteration:4d}  {nlp_err:9.2e}  {obj:12.5e}  "
             f"{inf_pr:9.2e}  {inf_du:9.2e}  {compl:9.2e}  "
             f"{mu:9.2e}  {step_norm:9.2e}  {dw_str}  {ic:2d}  "
             f"{ax:8.2e}  {az:8.2e}  "
-            f"{ls:2d}  {fsize:4d}  {rej:4d}  {frej:4d}  {dv:3d}"
+            f"{ls:2d}  {fsize:4d}  {rej:4d}  {frej:4d}  {dv:3d}",
         )
 
         d_inf_nlp = state.dual_infeas
@@ -143,40 +156,50 @@ class OptimizationLogger:
 
         if status == CONVERGED:
             if state.comm_rank == 0:
-                print(f"\n{'='*70}")
-                print(f"  Amigo converged in {iteration} iterations")
-                print(f"{'='*70}")
-                print(f"  Objective value         {obj_final:>20.10e}")
-                print(f"  NLP error               {overall_error:>20.10e}")
-                print(f"  Primal infeasibility    {p_inf_nlp:>20.10e}")
-                print(f"  Dual infeasibility      {d_inf_nlp:>20.10e}")
-                print(f"  Complementarity         {c_inf_nlp:>20.10e}")
-                print(f"  Barrier parameter       {state.mu:>20.10e}")
-                print(f"  Total iterations        {iteration:>20d}")
+                log_print(self.options, f"\n{'='*70}")
+                log_print(self.options, f"  Amigo converged in {iteration} iterations")
+                log_print(self.options, f"{'='*70}")
+                log_print(self.options, f"  Objective value         {obj_final:>20.10e}")
+                log_print(self.options, f"  NLP error               {overall_error:>20.10e}")
+                log_print(self.options, f"  Primal infeasibility    {p_inf_nlp:>20.10e}")
+                log_print(self.options, f"  Dual infeasibility      {d_inf_nlp:>20.10e}")
+                log_print(self.options, f"  Complementarity         {c_inf_nlp:>20.10e}")
+                log_print(self.options, f"  Barrier parameter       {state.mu:>20.10e}")
+                log_print(self.options, f"  Total iterations        {iteration:>20d}")
                 total_rej = iter_data.get("total_rejections")
                 if total_rej is not None:
                     frej_total = iter_data.get("total_filter_rejections", 0)
-                    print(f"  Trial rejections        {total_rej:>20d}")
-                    print(f"  Filter vetoes           {frej_total:>20d}")
-                print(f"{'='*70}")
+                    log_print(self.options, f"  Trial rejections        {total_rej:>20d}")
+                    log_print(self.options, f"  Filter vetoes           {frej_total:>20d}")
+                log_print(self.options, f"{'='*70}")
         elif status == CONVERGED_ACCEPTABLE:
             if state.comm_rank == 0:
-                print(f"\n{'='*70}")
-                print(
-                    f"  Amigo converged to acceptable point in {iteration} iterations"
+                log_print(self.options, f"\n{'='*70}")
+                log_print(
+                    self.options,
+                    f"  Amigo converged to acceptable point in {iteration} iterations",
                 )
-                print(f"{'='*70}")
-                print(f"  Objective value         {obj_final:>20.10e}")
-                print(f"  NLP error               {overall_error:>20.10e}")
-                print(f"  Primal infeasibility    {p_inf_nlp:>20.10e}")
-                print(f"  Dual infeasibility      {d_inf_nlp:>20.10e}")
-                print(f"  Complementarity         {c_inf_nlp:>20.10e}")
-                print(f"  Total iterations        {iteration:>20d}")
+                log_print(self.options, f"{'='*70}")
+                log_print(self.options, f"  Objective value         {obj_final:>20.10e}")
+                log_print(self.options, f"  NLP error               {overall_error:>20.10e}")
+                log_print(self.options, f"  Primal infeasibility    {p_inf_nlp:>20.10e}")
+                log_print(self.options, f"  Dual infeasibility      {d_inf_nlp:>20.10e}")
+                log_print(self.options, f"  Complementarity         {c_inf_nlp:>20.10e}")
+                log_print(self.options, f"  Total iterations        {iteration:>20d}")
                 total_rej = iter_data.get("total_rejections")
                 if total_rej is not None:
                     frej_total = iter_data.get("total_filter_rejections", 0)
-                    print(f"  Trial rejections        {total_rej:>20d}")
-                    print(f"  Filter vetoes           {frej_total:>20d}")
-                print(f"{'='*70}")
+                    log_print(self.options, f"  Trial rejections        {total_rej:>20d}")
+                    log_print(self.options, f"  Filter vetoes           {frej_total:>20d}")
+                log_print(self.options, f"{'='*70}")
 
-        sys.stdout.flush()
+        # Flush whichever stream received the output (the per-solve log file if set,
+        # else stdout) so progress is visible/persisted promptly.
+        _stream = self.options.get("log_file") if self.options else None
+        if _stream is not None:
+            try:
+                _stream.flush()
+            except Exception:
+                pass
+        else:
+            sys.stdout.flush()

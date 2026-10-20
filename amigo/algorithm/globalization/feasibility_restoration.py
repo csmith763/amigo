@@ -7,6 +7,8 @@ returns control once the required reduction is met.
 
 import numpy as np
 
+from ..default_options import log_print
+
 # Levenberg damping schedule and limits
 ZETA_MIN = 1e-8
 ZETA_MAX = 1e12
@@ -90,9 +92,10 @@ class FeasibilityRestoration:
 
         if state.comm_rank == 0:
             tag = "ok" if converged else ("infeasible" if info.infeasible else "failed")
-            print(
+            log_print(
+                self.options,
                 f"  Restoration: theta {info.theta_enter:.3e} -> "
-                f"{info.theta_final:.3e} in {info.iterations} iters ({tag})"
+                f"{info.theta_final:.3e} in {info.iterations} iters ({tag})",
             )
         return info
 

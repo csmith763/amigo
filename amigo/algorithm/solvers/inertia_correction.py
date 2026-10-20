@@ -7,6 +7,8 @@ detects structural degeneracy across iterations.
 
 import numpy as np
 
+from ..default_options import log_print
+
 
 class InertiaCorrector:
     """Grows primal and constraint regularization until the factorized
@@ -366,19 +368,21 @@ class InertiaCorrector:
                 self.last_delta_c = self._delta_c_curr
                 self.last_attempts = attempt + 1
                 if self._delta_x_curr > 0 and state.comm_rank == 0 and self.verbose:
-                    print(
+                    log_print(
+                        self.options,
                         f"  Inertia correction: "
                         f"delta_w={self._delta_x_curr:.2e}, "
                         f"delta_c={self._delta_c_curr:.2e}, "
-                        f"attempts={attempt + 1}"
+                        f"attempts={attempt + 1}",
                     )
                 return True
 
             if state.comm_rank == 0 and not singular and self.verbose:
-                print(
+                log_print(
+                    self.options,
                     f"  Inertia: expected ({self.num_primal}+, {self.num_dual}-), "
                     f"got ({n_pos}+, {n_neg}-), "
-                    f"dw={self._delta_x_curr:.1e}, pivtol={self._pivtol:.1e}"
+                    f"dw={self._delta_x_curr:.1e}, pivtol={self._pivtol:.1e}",
                 )
 
             # Dispatch based on failure type
@@ -408,16 +412,18 @@ class InertiaCorrector:
                     self.last_delta_c = self._delta_c_curr
                     self.last_attempts = attempt + 1
                     if state.comm_rank == 0 and self.verbose:
-                        print(
+                        log_print(
+                            self.options,
                             f"  Inertia: accepting wrong inertia at "
-                            f"delta_w={self._delta_x_curr:.2e} (cap)"
+                            f"delta_w={self._delta_x_curr:.2e} (cap)",
                         )
                     return True
                 if not self._perturb_for_wrong_inertia(state):
                     if state.comm_rank == 0:
-                        print(
+                        log_print(
+                            self.options,
                             f"  Inertia: delta_w={self._delta_x_curr:.2e} "
-                            f"> max, aborting correction"
+                            f"> max, aborting correction",
                         )
                     break
 

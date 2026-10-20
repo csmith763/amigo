@@ -8,6 +8,7 @@ the picked mu stops making progress.
 import numpy as np
 
 from .base import BarrierStrategy, BarrierInfo
+from ..default_options import log_print
 
 
 def _golden_section(f, a, b, sigma_tol, qf_tol, max_iters):
@@ -113,7 +114,7 @@ class QualityFunctionBarrierStrategy(BarrierStrategy):
         if not self.free_mode:
             if self._sufficient_progress(evaluator, state):
                 if state.comm_rank == 0 and self.options.get("verbose_barrier"):
-                    print("  QF: switching back to free mode")
+                    log_print(self.options, "  QF: switching back to free mode")
                 self.free_mode = True
                 self._remember_point(evaluator, state)
             else:
@@ -169,7 +170,7 @@ class QualityFunctionBarrierStrategy(BarrierStrategy):
 
             self.monotone_mu = mu_candidate
             if state.comm_rank == 0:
-                print(f"  QF -> monotone (step rejected): mu_bar={mu_candidate:.3e}")
+                log_print(self.options, f"  QF -> monotone (step rejected): mu_bar={mu_candidate:.3e}")
 
             state.invalidate(grad=False, hess=False)
 
@@ -208,7 +209,7 @@ class QualityFunctionBarrierStrategy(BarrierStrategy):
         mu_new = min(mu_new, self.mu_max)
 
         if state.comm_rank == 0 and self.options.get("verbose_barrier"):
-            print(f"  QF monotone: {state.mu:.3e} -> {mu_new:.3e}")
+            log_print(self.options, f"  QF monotone: {state.mu:.3e} -> {mu_new:.3e}")
         self.monotone_mu = mu_new
 
         # Invalidate the residual and step since mu has changed
@@ -231,7 +232,7 @@ class QualityFunctionBarrierStrategy(BarrierStrategy):
         state.invalidate(grad=False, hess=False, step=False)
 
         if state.comm_rank == 0:
-            print(f"  QF -> monotone: mu_bar={mu_new:.3e} (avg_comp={avg_c:.3e})")
+            log_print(self.options, f"  QF -> monotone: mu_bar={mu_new:.3e} (avg_comp={avg_c:.3e})")
 
         return True
 
@@ -395,10 +396,11 @@ class QualityFunctionBarrierStrategy(BarrierStrategy):
         mu_new = min(mu_new, self.mu_max)
 
         if state.comm_rank == 0 and self.options.get("verbose_barrier"):
-            print(
+            log_print(
+                self.options,
                 f"  PC: sigma={sigma:.4f}, mu={mu_new:.3e} "
                 f"(comp={avg_comp:.3e}, mu_aff={mu_aff:.3e}, "
-                f"a_aff=[{alpha_aff_x:.3f},{alpha_aff_z:.3f}])"
+                f"a_aff=[{alpha_aff_x:.3f},{alpha_aff_z:.3f}])",
             )
 
         # Compute the sigma value

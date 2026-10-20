@@ -6,6 +6,8 @@ The same solve is reused during the iteration to refresh the
 multipliers once the iterate is nearly feasible.
 """
 
+from ..default_options import log_print
+
 
 class MultiplierInitializer:
     def __init__(self, options, model, problem, optimizer):
@@ -34,9 +36,10 @@ class MultiplierInitializer:
         ):
             # Report the reset
             if state.comm_rank == 0:
-                print(
+                log_print(
+                    self.options,
                     f"  Multiplier refresh: dual_inf={state.dual_infeas:.2e} "
-                    f"at primal_infeas={state.primal_infeas:.2e}"
+                    f"at primal_infeas={state.primal_infeas:.2e}",
                 )
             self.compute_least_squares_multipliers(evaluator, solver, state)
         return
