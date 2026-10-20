@@ -1,16 +1,46 @@
 import argparse
 import numpy as np
 import amigo as am
-from scipy.sparse.linalg import spsolve
-from utils import write_vtu, get_exact_solution
+from utils import get_exact_solution
 import time
-from amigo.fem import MITCElement, SolutionSpace, Mesh, Problem
-from shell_element import (
-    NaturalShellGeoBasis,
-    ShellSolnBasis,
-    MITC4ShellTying,
-    integrand,
-)
+from amigo.fem import Mesh, Problem, CellType
+from amigo.fem.elements import MITCShell
+from amigo.fem.visualization import build_grid
+from scipy.sparse.linalg import spsolve
+
+
+def traction(soln, geo=None, data=None):
+    u = soln["u"].value
+    v = soln["v"].value
+    w = soln["w"].value
+
+    x = geo["x"].value
+    y = geo["y"].value
+    z = geo["z"].value
+
+    nx = geo["nx"].value
+    ny = geo["ny"].value
+    nz = geo["nz"].value
+
+    R = 1.0
+    L = 2.0
+
+    M = 4.0
+    N = 3.0
+
+    alpha = M / R
+    beta = N * np.pi / L
+
+    theta = am.atan2(x, y)
+
+    # Make the pressure dependent on the coordinate
+    pressure = am.sin(alpha * R * theta) * am.sin(beta * z)
+
+    # Set the work term
+    W = pressure * (u * nx + v * ny + w * nz)
+
+    return -W
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--build", action="store_true", default=False)
@@ -24,42 +54,19 @@ args = parser.parse_args()
 
 # Load the mesh
 mesh = Mesh("cylinder.inp")
-domains = mesh.get_domains()
 
-lateral_surfaces = ["SURFACE1"]
+surfaces = ["SURFACE1"]
 bottom_line = "LINE3"
 lateral_line = "LINE2"
 top_line = "LINE1"
-print(f"Lateral: {lateral_surfaces}, bottom: {bottom_line}, top: {top_line}")
 
-# 6 DOF/node: u, v, w translations + rx, ry, rz global rotations
-soln_space = SolutionSpace(
-    {"u": "H1", "v": "H1", "w": "H1", "rx": "H1", "ry": "H1", "rz": "H1"}
-)
-geo_space = SolutionSpace(
-    {"x": "H1", "y": "H1", "z": "H1", "nx": "H1", "ny": "H1", "nz": "H1"}
-)
-data_space = SolutionSpace({})
+# Create the shell element
+ctype = CellType.QUADRILATERAL
+mitc_shell = MITCShell()
+soln_space, geo_space, data_space, output_space = mitc_shell.get_default_spaces()
 
-etype = "CPS4"
+integrand_map = {"shell": {"target": surfaces}, "traction": {"target": surfaces}}
 
-degree = 1
-soln_basis = ShellSolnBasis(degree, kind="input")
-geo_basis = NaturalShellGeoBasis(degree, ["x", "y", "z", "nx", "ny", "nz"], kind="data")
-quadrature = mesh.get_quadrature(etype)
-data_basis = mesh.get_basis(data_space, etype, kind="data")
-mitc = MITC4ShellTying()
-
-shell_elem = MITCElement(
-    "Shell", soln_basis, data_basis, geo_basis, quadrature, mitc, integrand
-)
-
-integrand_map = {
-    "shell": {
-        "target": lateral_surfaces,
-        "integrand": integrand,
-    },
-}
 bc_map = {
     "pinned_bottom": {
         "type": "dirichlet",
@@ -73,17 +80,28 @@ bc_map = {
     },
 }
 
+# Create the element objects
+element_objs = {
+    ("shell", ctype): mitc_shell.create_element(name="Shell", ctype=ctype),
+    ("traction", ctype): mitc_shell.create_element(
+        name="Traction", ctype=ctype, integrand=traction
+    ),
+}
+
 problem = Problem(
     mesh,
     soln_space,
-    data_space,
     geo_space,
+    data_space,
     integrand_map=integrand_map,
     bc_map=bc_map,
-    element_objs={("shell", etype): shell_elem},
+    element_objs=element_objs,
 )
 
 model = problem.create_model("cylinder_shell")
+
+# Add the shell normals to the output
+MITCShell.add_shell_normals(problem, model, surfaces)
 
 # Add a fixed boundary condition for the zeroth node.
 model.add_fixed("soln.w[0]")
@@ -93,12 +111,10 @@ if args.build:
 
 model.initialize()
 
-print("Number of variables... ", model.num_variables)
+# Set the shell normals
+MITCShell.set_shell_normals(model)
 
-R = 1.0
-data = model.get_data_vector()
-data["geo.nx"] = data["geo.x"] / R
-data["geo.ny"] = data["geo.y"] / R
+print("Number of variables... ", model.num_variables)
 
 # Create the vectors and matrices for the model
 x = model.create_vector()
@@ -185,15 +201,12 @@ else:
 
 print(f"Factor time... {tfactor:.6f} seconds")
 
-u = x["soln.u"]
-v = x["soln.v"]
-w = x["soln.w"]
-
 u_ex, v_ex, w_ex = get_exact_solution(data["geo.x"], data["geo.y"], data["geo.z"])
 
+w = x["soln.w"]
 w_diff = w - w_ex
 print("Error = ", np.max(np.absolute(w_diff)) / np.max(w))
 
-conn = np.vstack([mesh.get_conn(s, "CPS4") for s in lateral_surfaces])
-write_vtu(mesh, conn, u, v, w, filename="cylinder_shell.vtu")
-write_vtu(mesh, conn, u_ex, v_ex, w_ex, filename="cylinder_shell_exact.vtu")
+# Plot the mesh
+grid = build_grid(problem, "u", x, surfaces)
+grid.plot(scalars="u", cmap="coolwarm", show_edges=False)
